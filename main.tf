@@ -1,37 +1,42 @@
 resource "libvirt_volume" "os_image_sles" {
   name   = "os_image_sles"
-  source = "./images/SLES15-SP1-JeOS.x86_64-15.1-OpenStack-Cloud-GM.qcow2"
+  source = var.url_sles 
 }
 
 resource "libvirt_volume" "os_image_opensuse" {
   name   = "os_image_opensuse"
-  source = "https://download.opensuse.org/repositories/Cloud:/Images:/Leap_15.2/images/openSUSE-Leap-15.2.x86_64-1.0.1-NoCloud-Build5.118.qcow2"
+  source = var.url_opensuse
 }
 
 
 resource "libvirt_volume" "os_image_debian" {
   name   = "os_image_debian"
-  source = "https://cloud.debian.org/images/cloud/buster/20190909-10/debian-10-generic-amd64-20190909-10.qcow2"
-}
-
+  source = var.url_debian
 
 resource "libvirt_volume" "os_image_ubuntu" {
   name   = "os_image_ubuntu"
-  source = "http://cloud-images-archive.ubuntu.com/releases/focal/release-20200423/ubuntu-20.04-server-cloudimg-amd64.img"
+  source = var.url_ubuntu
 }
 
 
 resource "libvirt_volume" "os_image_alma" {
   name   = "os_image_alma"
-  source = "https://repo.almalinux.org/almalinux/8.6/cloud/x86_64/images/AlmaLinux-8-GenericCloud-8.6-20220513.x86_64.qcow2"
+  source = var.url_alma
 }
+
+
+resource "libvirt_volume" "os_image_rocky" {
+  name   = "os_image_rocky"
+  source = var.url_rocky
+}
+
 
 
 
 resource "libvirt_volume" "volume_sles" {
   count  =  var.sles_count
   name   = "volume-sles${count.index}"
-  pool   = "default"
+  pool   = var.storage_pool
   base_volume_id = libvirt_volume.os_image_sles.id
   size = var.disk_size * 1024 * 1024 * 1024 
 }
@@ -41,7 +46,7 @@ resource "libvirt_volume" "volume_sles" {
 resource "libvirt_volume" "volume_opensuse" {
   count  =  var.opensuse_count
   name   = "volume-opensuse${count.index}"
-  pool   = "default"
+  pool   = var.storage_pool
   base_volume_id = libvirt_volume.os_image_opensuse.id
   size = var.disk_size * 1024 * 1024 * 1024
 }
@@ -49,7 +54,7 @@ resource "libvirt_volume" "volume_opensuse" {
 resource "libvirt_volume" "volume_debian" {
   count  =  var.debian_count
   name   = "volume-debian${count.index}"
-  pool   = "default"
+  pool   = var.storage_pool
   base_volume_id = libvirt_volume.os_image_debian.id
   size = var.disk_size * 1024 * 1024 * 1024
 
@@ -59,7 +64,7 @@ resource "libvirt_volume" "volume_debian" {
 resource "libvirt_volume" "volume_ubuntu" {
   count  =  var.ubuntu_count
   name   = "volume-ubuntu${count.index}"
-  pool   = "default"
+  pool   = var.storage_pool
   base_volume_id = libvirt_volume.os_image_ubuntu.id
   size = var.disk_size * 1024 * 1024 * 1024
 }
@@ -68,9 +73,18 @@ resource "libvirt_volume" "volume_ubuntu" {
 resource "libvirt_volume" "volume_alma" {
   count  =  var.alma_count
   name   = "volume-alma${count.index}"
-  pool   = "default"
+  pool   = var.storage_pool
   base_volume_id = libvirt_volume.os_image_alma.id
 }
+
+
+resource "libvirt_volume" "volume_rocky" {
+  count  =  var.rocky_count
+  name   = "volume-rocky${count.index}"
+  pool   = var.storage_pool
+  base_volume_id = libvirt_volume.os_image_rocky.id
+}
+
 
 
 data "template_file" "sles_user_data" {
@@ -129,6 +143,17 @@ data "template_file" "alma_user_data" {
 }
 
 
+data "template_file" "rocky_user_data" {
+  count = var.rocky_count
+  template = file("${path.module}/templates/cloud_init.cfg")
+     vars = {
+    ssh_user = var.ssh_user
+    ssh_key = var.ssh_key
+    node_hostname = "rocky-${count.index}"
+  }
+}
+
+
 
 data "template_file" "network_config" {
   template = file("${path.module}/templates/network_config.cfg")
@@ -176,6 +201,14 @@ resource "libvirt_cloudinit_disk" "alma" {
   count = var.alma_count
   name  = "cloudinit-alma-${count.index}.iso"
   user_data      = data.template_file.alma_user_data[count.index].rendered
+  network_config = data.template_file.network_config.rendered
+}
+
+
+resource "libvirt_cloudinit_disk" "rocky" {
+  count = var.rocky_count
+  name  = "cloudinit-rocky-${count.index}.iso"
+  user_data      = data.template_file.rocky_user_data[count.index].rendered
   network_config = data.template_file.network_config.rendered
 }
 
@@ -398,4 +431,45 @@ resource "libvirt_domain" "alma" {
 }
 
 
+# Create Rocky vms
+resource "libvirt_domain" "rocky" {
+  count =  var.rocky_count
+  name = "rocky-${count.index}"
+  disk {
+    volume_id = libvirt_volume.volume_rocky[count.index].id
+  }
+  memory = var.rocky_node_memory
+  vcpu   = var.rocky_node_vcpu
+
+  cloudinit = libvirt_cloudinit_disk.rocky[count.index].id
+
+  network_interface {
+    network_name = var.network_name
+    wait_for_lease = true
+  }
+
+  console {
+    type        = "pty"
+    target_port = "0"
+    target_type = "serial"
+  }
+
+  console {
+    type        = "pty"
+    target_type = "virtio"
+    target_port = "1"
+  }
+
+  graphics {
+    type        = "spice"
+    listen_type = "address"
+    autoport    = true
+  }
+
+  provisioner "local-exec" {
+    command = "sleep 60"
+    interpreter = ["/bin/bash", "-c"]
+  }
+
+}
 

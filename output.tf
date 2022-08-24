@@ -20,4 +20,7 @@ output "alma_ips" {
   value = flatten(libvirt_domain.alma.*.network_interface.0.addresses)
 }
 
+output "rocky_ips" {
+  value = flatten(libvirt_domain.rocky.*.network_interface.0.addresses)
+}
 

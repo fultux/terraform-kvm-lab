@@ -24,7 +24,21 @@ ubuntu_node_vcpu = 1
 alma_count= 2
 alma_node_memory= "2048"
 alma_node_vcpu= 1
+rocky_count= 2
+rocky_node_memory= "2048"
+rocky_node_vcpu= 1
 disk_size = 20
+storage_pool = ""
+url_sles = ""
+url_opensuse = ""
+url_debian = ""
+url_ubuntu = ""
+url_alma = ""
+url_rocky =""
+
+
+
+
 ```
 
 
